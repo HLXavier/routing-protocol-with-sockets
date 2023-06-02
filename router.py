@@ -1,7 +1,7 @@
 from socket import socket, AF_INET, SOCK_DGRAM
 from threading import Thread, Lock
 from time import time, sleep
-from os import system
+from transporter import receive, send
 from consts import *
 from logger import *
 
@@ -11,31 +11,42 @@ def read_neighbours():
         return file.read().splitlines()
 
 
+# { 'destination': [metric, next_hop] }
 def format_routing_table():
     formated = ''
 
-    for key, value in routing_table.items():
-        formated += f'*{key};{value[0]}'
+    for destination, value in routing_table.items():
+        metric, _ = value
+        formated += f'*{destination};{metric}'
     
     return formated
 
-# TODO: Não pode enviar as rotas para o vizinho que enviou a mensagem
-def update_routing_table(message, origin):
-    if not routing_table or origin not in routing_table:
-        routing_table[origin] = [1, origin]
-        return True
 
-    routes = message.split('*')[1:]
+def update_routing_table(message, origin):
     modified = False
+    routes = [f'{origin};0'] + message.split('*')[1:]
 
     for route in routes:
-        ip, metric = route.split(';')
+        destination, metric = route.split(';')
+        metric = int(metric)
 
-        if ip not in routing_table or int(metric) + 1 < routing_table[ip][0]:
-            routing_table[ip] = [int(metric) + 1, origin]
+        is_new_path = destination not in routing_table
+        is_better_path = False
+
+        if not is_new_path:
+            current_metric, _ = routing_table[destination]
+            is_better_path = metric + 1 < current_metric
+
+        if destination != ip and (is_new_path or is_better_path):
+            routing_table[destination] = [metric + 1, origin]
             modified = True
 
     return modified
+
+
+def receive():
+    message, origin = socket.recvfrom(1024)
+    return message.decode(FORMAT), origin
 
 
 def send(ip, message):
@@ -43,40 +54,51 @@ def send(ip, message):
     socket.sendto(message, (ip, PORT))
 
 
-def send_routing_table():
+def propagate_routing_table():
+    message = MSG_JOIN
+
+    if routing_table:
+        message = format_routing_table()
+
     for neighbour in neighbours:
-        if not routing_table:
-            send(MSG_JOIN)
-        else:
-            send(neighbour, format_routing_table())
+        send(neighbour, message)
+        log_message(message, ip)
+        
+
+def timeout(neighbour):
+    if neighbour not in last_seen: return
+
+    if time() - last_seen[neighbour] > TIMEOUT:
+        with lock:
+            del routing_table[neighbour]
+        log_timeout(neighbour)
+        propagate_routing_table()
 
     
 def receiver():
-    while True:
-        message, origin = socket.recvfrom(1024)
-        message = message.decode(FORMAT)
+    while True:        
+        message, origin = receive()
+        log_message(message, origin)
 
         last_seen[origin] = time()
+
         with lock:
-            modified = update_routing_table(message, origin[0])
+            modified = update_routing_table(message, origin)
 
         if modified:
-            send_routing_table()
+            propagate_routing_table()
 
 
 def sender():
     while True:
-        send_routing_table()
+        propagate_routing_table()
         sleep(MSG_EXG_INTERVAL)
 
 
 def pinger():
     while True:
         for neighbour in neighbours:
-            if neighbour not in last_seen or time() - last_seen[neighbour] > TIMEOUT:
-                with lock:
-                    del routing_table[neighbour]
-                send_routing_table()
+            timeout(neighbour)
         sleep(MSG_PING_INTERVAL)
 
 
@@ -84,6 +106,9 @@ def pinger():
 neighbours = read_neighbours()
 routing_table = {}
 last_seen = {}
+ip = ''
+
+
 
 # Socket    
 socket = socket(AF_INET, SOCK_DGRAM)
@@ -92,11 +117,33 @@ socket.bind((NETWORK, PORT))
 # Threading
 lock = Lock()
 
+
+# # 1 - 2 - 3
+# message, origin = '*1;1*3;1', '2'
+# update_routing_table(message, origin)
+# log_routing_table(routing_table)
+
+# # 1 - 2
+# # \  /
+# #   3
+# message, origin = '*1;1*2;1', '3'
+# update_routing_table(message, origin)
+# log_routing_table(routing_table)
+
+# # 1 - 2 
+# # \  /      
+# #   3 - 4 - 5 - 6
+# message, origin = '*1;1*2;1*4;1*5;2', '3'
+# update_routing_table(message, origin)
+# log_routing_table(routing_table)
+
+# # 1 - 2 - - -
+# # \  /      |
+# #   3 - 4 - 5 
+# message, origin = '*1;1*3;1*5;1', '2'
+# update_routing_table(message, origin)
+# log_routing_table(routing_table)
+
 Thread(target=sender).start()
 Thread(target=receiver).start()
-
-
-while True:
-    system('clear')
-    log_routing_table(routing_table)
-    sleep(1)
+Thread(target=pinger).start()
