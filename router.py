@@ -3,10 +3,11 @@ from threading import Thread, Lock
 from time import time, sleep
 from consts import *
 from logger import *
+import sys
 
 
 def read_neighbours():
-    with open('IPVizinhos.txt', 'r') as file:
+    with open(sys.argv[2], 'r') as file:
         return file.read().splitlines()
 
 
@@ -45,7 +46,8 @@ def update_routing_table(message, origin):
 
 def receive():
     message, origin = socket.recvfrom(1024)
-    return message.decode(FORMAT), origin
+    origin_ip, _ = origin
+    return message.decode(FORMAT), origin_ip
 
 
 def send(ip, message):
@@ -107,7 +109,7 @@ def pinger():
 neighbours = read_neighbours()
 routing_table = {}
 last_seen = {}
-ip = ''
+ip = sys.argv[1]
 
 
 
