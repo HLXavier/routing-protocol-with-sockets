@@ -1,7 +1,6 @@
 from socket import socket, AF_INET, SOCK_DGRAM
 from threading import Thread, Lock
 from time import time, sleep
-from transporter import receive, send
 from consts import *
 from logger import *
 
@@ -71,6 +70,8 @@ def timeout(neighbour):
     if time() - last_seen[neighbour] > TIMEOUT:
         with lock:
             del routing_table[neighbour]
+            del last_seen[neighbour]
+
         log_timeout(neighbour)
         propagate_routing_table()
 
