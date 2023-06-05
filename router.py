@@ -1,4 +1,4 @@
-from socket import socket, AF_INET, SOCK_DGRAM
+from socket import socket, gethostname, gethostbyname, AF_INET, SOCK_DGRAM
 from threading import Thread, Lock
 from time import time, sleep
 from consts import *
@@ -7,7 +7,13 @@ import sys
 
 
 def read_neighbours():
-    with open(sys.argv[2], 'r') as file:
+    path = None
+    if len(sys.argv) >= 3:
+        path = sys.argv[2]
+    else:
+        path = 'IPVizinhos.txt'
+
+    with open(path, 'r') as file:
         return file.read().splitlines()
 
 
@@ -118,7 +124,6 @@ neighbours = read_neighbours()
 routing_table = {}
 last_seen = {}
 ip = sys.argv[1]
-
 
 
 # Socket    
