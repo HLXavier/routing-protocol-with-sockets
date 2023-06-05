@@ -74,6 +74,10 @@ def timeout(neighbour):
             del routing_table[neighbour]
             del last_seen[neighbour]
 
+            unreachable_targets = [target for target, path in routing_table.items() if path[1] == neighbour]
+            for target in unreachable_targets:
+                del routing_table[target]
+
         log_timeout(neighbour)
         propagate_routing_table()
 
@@ -104,6 +108,10 @@ def pinger():
             timeout(neighbour)
         sleep(MSG_PING_INTERVAL)
 
+def logger():
+    while True:
+        log_routing_table(routing_table)
+        sleep(10)
 
 # Main
 neighbours = read_neighbours()
@@ -150,3 +158,4 @@ lock = Lock()
 Thread(target=sender).start()
 Thread(target=receiver).start()
 Thread(target=pinger).start()
+Thread(target=logger).start()
